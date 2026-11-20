@@ -39,6 +39,7 @@ target_compile_definitions(RBT_EQ PRIVATE
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0
   JUCE_VST3_CAN_REPLACE_VST2=0
+  RBT_EQ_DIAGNOSTIC_NO_EDITOR=1
 )
 
 target_link_libraries(RBT_EQ PRIVATE
