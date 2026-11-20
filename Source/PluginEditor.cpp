@@ -37,9 +37,10 @@ void RBTEQAudioProcessorEditor::resized(){
     for(int i=0;i<8;++i)strips[i]->setBounds(x+i*w,y,w,h);
 }
 void RBTEQAudioProcessorEditor::timerCallback(){processor.getSpectrum(spectrum);analyzer.repaint();
-    const bool held=juce::KeyPress::isKeyCurrentlyDown(juce::KeyPress::shiftKey);
+    const bool held=juce::ModifierKeys::getCurrentModifiers().isShiftDown();
     if(held!=shiftHeld){shiftHeld=held;shiftLabel.setColour(juce::Label::textColourId,held?juce::Colour(0xffe5a64b):muted);shiftLabel.setColour(juce::Label::backgroundColourId,held?juce::Colour(0xff3a2c1d):juce::Colour(0xff202428));shiftLabel.repaint();}
     for(auto& strip:strips)if(strip){int sensitivity=held?1400:150;strip->freq.setMouseDragSensitivity(sensitivity);strip->gain.setMouseDragSensitivity(sensitivity);strip->q.setMouseDragSensitivity(sensitivity);}
+}
 void RBTEQAudioProcessorEditor::syncGraph(){analyzer.repaint();}
 
 void RBTEQAudioProcessorEditor::Analyzer::paint(juce::Graphics& g)
@@ -50,17 +51,58 @@ void RBTEQAudioProcessorEditor::Analyzer::paint(juce::Graphics& g)
     for(int d=-18;d<=18;d+=12){float y=dbY((float)d,plot);g.setColour(grid.withAlpha(0.6f));g.drawHorizontalLine((int)y,plot.getX(),plot.getRight());g.setColour(muted);g.drawText((d>0?"+":"")+juce::String(d),1,y-7,23,14,juce::Justification::centredRight);}
     g.setColour(juce::Colour(0xff858d92));g.drawHorizontalLine((int)plot.getCentreY(),plot.getX(),plot.getRight());
     // FFT trace: map bins to log-frequency and draw a soft line
-    juce::Path spec;bool started=false;for(int px=0;px<(int)plot.getWidth();++px){float f=20.0f*std::pow(1000.0f,(float)px/plot.getWidth());int bin=juce::jlimit(1,511,(int)(f*1024.0/owner.processor.getSampleRate()));float d=owner.spectrum[(size_t)bin];float x=plot.getX()+px,y=plot.getBottom()-juce::jmap(juce::jlimit(-90.0f,-10.0f,d),-90.0f,-10.0f,0.0f,plot.getHeight());if(!started){spec.startNewSubPath(x,y);started=true;}else spec.lineTo(x,y);}
+    juce::Path spec;bool started=false;for(int px=0;px<(int)plot.getWidth();++px){float f=20.0f*std::pow(1000.0f,(float)px/plot.getWidth());const double sampleRate = owner.processor.getSampleRate() > 1.0 ? owner.processor.getSampleRate() : 44100.0;int bin=juce::jlimit(1,511,(int)(f*1024.0/sampleRate));float d=owner.spectrum[(size_t)bin];float x=plot.getX()+px,y=plot.getBottom()-juce::jmap(juce::jlimit(-90.0f,-10.0f,d),-90.0f,-10.0f,0.0f,plot.getHeight());if(!started){spec.startNewSubPath(x,y);started=true;}else spec.lineTo(x,y);}
     g.setColour(juce::Colour(0xff5a91a1).withAlpha(0.20f));juce::Path fill=spec;fill.lineTo(plot.getRight(),plot.getBottom());fill.lineTo(plot.getX(),plot.getBottom());fill.closeSubPath();g.fillPath(fill);g.setColour(juce::Colour(0xff79b3c1).withAlpha(0.75f));g.strokePath(spec,juce::PathStrokeType(1.2f));
-    // summed EQ curve approximation
-    juce::Path curve;for(int px=0;px<(int)plot.getWidth();++px){float f=20.0f*std::pow(1000.0f,(float)px/plot.getWidth());float db=0;for(int b=0;b<8;++b)if(owner.processor.getBandEnabled(b)){float fc=owner.processor.getBandFrequency(b),gain=owner.processor.getBandGain(b),q=owner.processor.getBandQ(b);float type=owner.processor.getBandType(b);if(type<=2){float oct=std::log2(f/fc);float width=1.0f/q;float response=gain*std::exp(-0.5f*(oct/width)*(oct/width));if(type==1)response*=1.0f/(1.0f+std::pow(f/fc,2));if(type==2)response*=1.0f/(1.0f+std::pow(fc/f,2));db+=response;}else if(type==3&&f<fc)db-=18.0f*std::log2(fc/f);else if(type==4&&f>fc)db-=18.0f*std::log2(f/fc);}
-        float x=plot.getX()+px,y=dbY(juce::jlimit(-18.0f,18.0f,db),plot);if(px==0)curve.startNewSubPath(x,y);else curve.lineTo(x,y);}
-    g.setColour(juce::Colour(0xffe6e8e9));g.strokePath(curve,juce::PathStrokeType(2.0f));
+    // Exact summed magnitude response calculated from the same biquad coefficients as the DSP.
+    juce::Path curve;
+    for (int px = 0; px < (int) plot.getWidth(); ++px)
+    {
+        const float frequency = 20.0f * std::pow(1000.0f, (float) px / plot.getWidth());
+        const float db = (float) owner.processor.getMagnitudeResponseDb(frequency);
+        const float x = plot.getX() + px;
+        const float y = dbY(juce::jlimit(-18.0f, 18.0f, db), plot);
+        if (px == 0) curve.startNewSubPath(x, y);
+        else curve.lineTo(x, y);
+    }
+    g.setColour(juce::Colour(0xffe6e8e9));
+    g.strokePath(curve, juce::PathStrokeType(2.0f));
     for(int b=0;b<8;++b){float x=logX(owner.processor.getBandFrequency(b),plot),y=dbY(owner.processor.getBandGain(b),plot);g.setColour(colors[b]);g.fillEllipse(x-5,y-5,10,10);g.setColour(juce::Colour(0xff101214));g.drawEllipse(x-5,y-5,10,10,1.2f);if(b==owner.selectedBand){g.setColour(colors[b].withAlpha(0.3f));g.drawEllipse(x-10,y-10,20,20,1.2f);}}
 }
 int RBTEQAudioProcessorEditor::Analyzer::hitBand(juce::Point<float> p) const{auto plot=getLocalBounds().toFloat().reduced(27,18);int best=-1;float distance=14;for(int b=0;b<8;++b){float x=logX(owner.processor.getBandFrequency(b),plot),y=dbY(owner.processor.getBandGain(b),plot);float d=p.getDistanceFrom({x,y});if(d<distance){distance=d;best=b;}}return best;}
-void RBTEQAudioProcessorEditor::Analyzer::mouseDown(const juce::MouseEvent& e){int b=hitBand(e.position);if(b>=0)owner.selectedBand=b;mouseDrag(e);}
-void RBTEQAudioProcessorEditor::Analyzer::mouseDrag(const juce::MouseEvent& e){int b=owner.selectedBand;auto plot=getLocalBounds().toFloat().reduced(27,18);float f=20.0f*std::pow(1000.0f,juce::jlimit(0.0f,1.0f,(e.position.x-plot.getX())/plot.getWidth()));float gain=juce::jlimit(-18.0f,18.0f,(plot.getCentreY()-e.position.y)/(plot.getHeight()/36.0f));owner.processor.setBandFrequency(b,f);owner.processor.setBandGain(b,gain);owner.strips[b]->freq.setValue(f,juce::dontSendNotification);owner.strips[b]->gain.setValue(gain,juce::dontSendNotification);repaint();}
+void RBTEQAudioProcessorEditor::Analyzer::mouseDown(const juce::MouseEvent& e)
+{
+    const int band = hitBand(e.position);
+    draggingBand = (band >= 0);
+    if (!draggingBand)
+        return;
+
+    owner.selectedBand = band;
+    mouseDrag(e);
+}
+
+void RBTEQAudioProcessorEditor::Analyzer::mouseDrag(const juce::MouseEvent& e)
+{
+    if (!draggingBand || owner.selectedBand < 0 || owner.selectedBand >= 8)
+        return;
+
+    const int band = owner.selectedBand;
+    const auto plot = getLocalBounds().toFloat().reduced(27, 18);
+    const float frequency = 20.0f * std::pow(1000.0f,
+        juce::jlimit(0.0f, 1.0f, (e.position.x - plot.getX()) / plot.getWidth()));
+    const float gain = juce::jlimit(-18.0f, 18.0f,
+        (plot.getCentreY() - e.position.y) / (plot.getHeight() / 36.0f));
+
+    owner.processor.setBandFrequency(band, frequency);
+    owner.processor.setBandGain(band, gain);
+    owner.strips[band]->freq.setValue(frequency, juce::dontSendNotification);
+    owner.strips[band]->gain.setValue(gain, juce::dontSendNotification);
+    repaint();
+}
+
+void RBTEQAudioProcessorEditor::Analyzer::mouseUp(const juce::MouseEvent&)
+{
+    draggingBand = false;
+}
 
 RBTEQAudioProcessorEditor::BandStrip::BandStrip(RBTEQAudioProcessorEditor& e,int b):band(b),owner(e)
 {

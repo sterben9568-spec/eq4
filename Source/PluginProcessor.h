@@ -13,7 +13,13 @@ public:
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override { return true; }
+    bool hasEditor() const override {
+#if defined(RBT_EQ_DIAGNOSTIC_NO_EDITOR)
+        return false;
+#else
+        return true;
+#endif
+    }
     const juce::String getName() const override { return "RBT EQ"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
@@ -30,6 +36,7 @@ public:
     juce::AudioProcessorValueTreeState parameters;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void getSpectrum(std::array<float, 512>& out) const;
+    double getMagnitudeResponseDb(double frequency) const;
     float getBandFrequency(int band) const;
     float getBandGain(int band) const;
     float getBandQ(int band) const;
