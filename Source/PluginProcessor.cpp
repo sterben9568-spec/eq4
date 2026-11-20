@@ -476,7 +476,11 @@ void RBTEQAudioProcessor::setStateInformation(const void* data, int size)
 
 juce::AudioProcessorEditor* RBTEQAudioProcessor::createEditor()
 {
+#if defined(RBT_EQ_DIAGNOSTIC_NO_EDITOR)
+    return nullptr;
+#else
     return new RBTEQAudioProcessorEditor(*this);
+#endif
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
