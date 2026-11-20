@@ -106,18 +106,18 @@ RBTEQAudioProcessor::Coeff RBTEQAudioProcessor::makeCoeff(int type, double frequ
         }
 
         case 3: // High-pass
-            c.b0 = (1.0 - cw) * 0.5;
-            c.b1 = 1.0 - cw;
-            c.b2 = (1.0 - cw) * 0.5;
+            c.b0 = (1.0 + cw) * 0.5;
+            c.b1 = -(1.0 + cw);
+            c.b2 = (1.0 + cw) * 0.5;
             c.a0 = 1.0 + alpha;
             c.a1 = -2.0 * cw;
             c.a2 = 1.0 - alpha;
             break;
 
         case 4: // Low-pass
-            c.b0 = (1.0 + cw) * 0.5;
-            c.b1 = -(1.0 + cw);
-            c.b2 = (1.0 + cw) * 0.5;
+            c.b0 = (1.0 - cw) * 0.5;
+            c.b1 = 1.0 - cw;
+            c.b2 = (1.0 - cw) * 0.5;
             c.a0 = 1.0 + alpha;
             c.a1 = -2.0 * cw;
             c.a2 = 1.0 - alpha;
@@ -150,6 +150,106 @@ RBTEQAudioProcessor::Coeff RBTEQAudioProcessor::makeBandPass(double frequency, d
     c.a1 = -2.0 * std::cos(w);
     c.a2 = 1.0 - alpha;
     return c;
+}
+
+double RBTEQAudioProcessor::getMagnitudeResponseDb(double frequency) const
+{
+    const double f = juce::jlimit(10.0, sr * 0.49, frequency);
+    const double w = 2.0 * juce::MathConstants<double>::pi * f / sr;
+    const std::complex<double> z(std::cos(w), -std::sin(w));
+    const auto z2 = z * z;
+
+    const auto sectionMagnitude = [&] (const Coeff& c)
+    {
+        const std::complex<double> numerator = c.b0 + c.b1 * z + c.b2 * z2;
+        const std::complex<double> denominator = c.a0 + c.a1 * z + c.a2 * z2;
+        return std::abs(numerator / denominator);
+    };
+
+    // Solo mode replaces the EQ chain with the first active audition band-pass.
+    for (int b = 0; b < 8; ++b)
+    {
+        if (parameters.getRawParameterValue(bandId(b, "solo"))->load() > 0.5f)
+        {
+            const double fc = parameters.getRawParameterValue(bandId(b, "freq"))->load();
+            const double q = parameters.getRawParameterValue(bandId(b, "q"))->load();
+            const double magnitude = sectionMagnitude(makeBandPass(fc, q, sr));
+            return 20.0 * std::log10(std::max(magnitude, 1.0e-12));
+        }
+    }
+
+    static constexpr double qFor12dB[] = { 0.7071067811865476 };
+    static constexpr double qFor18dB[] = { 1.0 };
+    static constexpr double qFor24dB[] = { 0.541196100146197, 1.306562964876377 };
+    static constexpr double qFor36dB[] = { 0.5176380902050415, 0.7071067811865476, 1.9318516525781366 };
+    static constexpr double qFor48dB[] = { 0.5097955791041592, 0.6013448869350453, 0.8999762231364156, 2.562915447741506 };
+
+    double totalDb = 0.0;
+    for (int b = 0; b < 8; ++b)
+    {
+        if (parameters.getRawParameterValue(bandId(b, "on"))->load() <= 0.5f)
+            continue;
+
+        const double fc = parameters.getRawParameterValue(bandId(b, "freq"))->load();
+        const double gain = parameters.getRawParameterValue(bandId(b, "gain"))->load();
+        const double q = parameters.getRawParameterValue(bandId(b, "q"))->load();
+        const int type = static_cast<int>(parameters.getRawParameterValue(bandId(b, "type"))->load());
+
+        if (type != 3 && type != 4)
+        {
+            totalDb += 20.0 * std::log10(std::max(sectionMagnitude(makeCoeff(type, fc, gain, q, sr)), 1.0e-12));
+            continue;
+        }
+
+        const int slope = static_cast<int>(parameters.getRawParameterValue(bandId(b, "slope"))->load());
+        const double* sectionQs = nullptr;
+        int biquadCount = 0;
+        bool firstOrder = false;
+        switch (slope)
+        {
+            case 0: firstOrder = true; break;
+            case 1: sectionQs = qFor12dB; biquadCount = 1; break;
+            case 2: firstOrder = true; sectionQs = qFor18dB; biquadCount = 1; break;
+            case 3: sectionQs = qFor24dB; biquadCount = 2; break;
+            case 4: sectionQs = qFor36dB; biquadCount = 3; break;
+            case 5: sectionQs = qFor48dB; biquadCount = 4; break;
+            default: sectionQs = qFor24dB; biquadCount = 2; break;
+        }
+
+        double bandDb = 0.0;
+        for (int stage = 0; stage < (firstOrder ? biquadCount + 1 : biquadCount); ++stage)
+        {
+            Coeff section;
+            if (firstOrder && stage == 0)
+            {
+                const double k = std::tan(juce::MathConstants<double>::pi * fc / sr);
+                section = {};
+                if (type == 3) // 1st-order high-pass
+                {
+                    section.b0 = 1.0 / (1.0 + k);
+                    section.b1 = -1.0 / (1.0 + k);
+                }
+                else // 1st-order low-pass
+                {
+                    section.b0 = k / (1.0 + k);
+                    section.b1 = k / (1.0 + k);
+                }
+                section.a0 = 1.0;
+                section.a1 = (1.0 - k) / (1.0 + k);
+            }
+            else
+            {
+                const int qIndex = firstOrder ? stage - 1 : stage;
+                if (qIndex < biquadCount)
+                    section = makeCoeff(type, fc, 0.0, sectionQs[qIndex], sr);
+            }
+
+            bandDb += 20.0 * std::log10(std::max(sectionMagnitude(section), 1.0e-12));
+        }
+        totalDb += bandDb;
+    }
+
+    return totalDb;
 }
 
 void RBTEQAudioProcessor::updateFilters()
