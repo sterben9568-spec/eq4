@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - fix/dsp-and-editor
+      - fix/studio-one-instant-crash
   pull_request:
     branches:
       - main
