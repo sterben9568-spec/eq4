@@ -16,8 +16,11 @@ private:
         void paint(juce::Graphics&) override;
         void mouseDown(const juce::MouseEvent&) override;
         void mouseDrag(const juce::MouseEvent&) override;
+        void mouseUp(const juce::MouseEvent&) override;
         int hitBand(juce::Point<float>) const;
-    private: RBTEQAudioProcessorEditor& owner;
+    private:
+        RBTEQAudioProcessorEditor& owner;
+        bool draggingBand = false;
     };
     class BandStrip : public juce::Component {
     public:
