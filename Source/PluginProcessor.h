@@ -30,6 +30,7 @@ public:
     juce::AudioProcessorValueTreeState parameters;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void getSpectrum(std::array<float, 512>& out) const;
+    double getMagnitudeResponseDb(double frequency) const;
     float getBandFrequency(int band) const;
     float getBandGain(int band) const;
     float getBandQ(int band) const;
