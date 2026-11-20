@@ -1,0 +1,31 @@
+name: Windows VST3 build
+
+on:
+  push:
+    branches:
+      - main
+      - fix/dsp-and-editor
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-vst3:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -A x64
+
+      - name: Build VST3
+        run: cmake --build build --config Release --target RBT_EQ_VST3 --parallel 2
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: RBT-EQ-VST3-Windows-x64
+          path: build/RBT_EQ_artefacts/Release/VST3/RBT EQ.vst3
+          if-no-files-found: error
