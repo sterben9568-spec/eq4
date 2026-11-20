@@ -37,7 +37,7 @@ void RBTEQAudioProcessorEditor::resized(){
     for(int i=0;i<8;++i)strips[i]->setBounds(x+i*w,y,w,h);
 }
 void RBTEQAudioProcessorEditor::timerCallback(){processor.getSpectrum(spectrum);analyzer.repaint();
-    const bool held=juce::KeyPress::isKeyCurrentlyDown(juce::KeyPress::shiftKey);
+    const bool held=juce::ModifierKeys::getCurrentModifiers().isShiftDown();
     if(held!=shiftHeld){shiftHeld=held;shiftLabel.setColour(juce::Label::textColourId,held?juce::Colour(0xffe5a64b):muted);shiftLabel.setColour(juce::Label::backgroundColourId,held?juce::Colour(0xff3a2c1d):juce::Colour(0xff202428));shiftLabel.repaint();}
     for(auto& strip:strips)if(strip){int sensitivity=held?1400:150;strip->freq.setMouseDragSensitivity(sensitivity);strip->gain.setMouseDragSensitivity(sensitivity);strip->q.setMouseDragSensitivity(sensitivity);}
 }
