@@ -50,8 +50,12 @@ void RBTEQAudioProcessorEditor::Analyzer::paint(juce::Graphics& g)
     for(float f:freqs){float x=logX(f,plot);g.setColour(grid.withAlpha(0.65f));g.drawVerticalLine((int)x,plot.getY(),plot.getBottom());g.setColour(muted);g.setFont(9);if(f==20||f==100||f==1000||f==10000||f==20000)g.drawText(f>=1000?juce::String(f/1000, f==1000?0:1)+"k":juce::String((int)f),x-16,plot.getBottom()+5,32,13,juce::Justification::centred);}
     for(int d=-18;d<=18;d+=12){float y=dbY((float)d,plot);g.setColour(grid.withAlpha(0.6f));g.drawHorizontalLine((int)y,plot.getX(),plot.getRight());g.setColour(muted);g.drawText((d>0?"+":"")+juce::String(d),1,y-7,23,14,juce::Justification::centredRight);}
     g.setColour(juce::Colour(0xff858d92));g.drawHorizontalLine((int)plot.getCentreY(),plot.getX(),plot.getRight());
-    // FFT trace: map bins to log-frequency and draw a soft line
-    juce::Path spec;bool started=false;for(int px=0;px<(int)plot.getWidth();++px){float f=20.0f*std::pow(1000.0f,(float)px/plot.getWidth());int bin=juce::jlimit(1,511,(int)(f*1024.0/owner.processor.getSampleRate()));float d=owner.spectrum[(size_t)bin];float x=plot.getX()+px,y=plot.getBottom()-juce::jmap(juce::jlimit(-90.0f,-10.0f,d),-90.0f,-10.0f,0.0f,plot.getHeight());if(!started){spec.startNewSubPath(x,y);started=true;}else spec.lineTo(x,y);}
+    // FFT trace: map bins to log-frequency and draw a soft line.
+    // Some hosts can create the editor before a valid processing sample rate is available.
+    // Never divide by zero or convert infinity to an integer while painting the initial GUI.
+    const double displaySampleRate = owner.processor.getSampleRate() > 0.0
+        ? owner.processor.getSampleRate() : 44100.0;
+    juce::Path spec;bool started=false;for(int px=0;px<(int)plot.getWidth();++px){float f=20.0f*std::pow(1000.0f,(float)px/plot.getWidth());int bin=juce::jlimit(1,511,(int)(f*1024.0/displaySampleRate));float d=owner.spectrum[(size_t)bin];float x=plot.getX()+px,y=plot.getBottom()-juce::jmap(juce::jlimit(-90.0f,-10.0f,d),-90.0f,-10.0f,0.0f,plot.getHeight());if(!started){spec.startNewSubPath(x,y);started=true;}else spec.lineTo(x,y);}
     g.setColour(juce::Colour(0xff5a91a1).withAlpha(0.20f));juce::Path fill=spec;fill.lineTo(plot.getRight(),plot.getBottom());fill.lineTo(plot.getX(),plot.getBottom());fill.closeSubPath();g.fillPath(fill);g.setColour(juce::Colour(0xff79b3c1).withAlpha(0.75f));g.strokePath(spec,juce::PathStrokeType(1.2f));
     // Exact summed magnitude response calculated from the same biquad coefficients as the DSP.
     juce::Path curve;
