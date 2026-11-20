@@ -40,6 +40,7 @@ void RBTEQAudioProcessorEditor::timerCallback(){processor.getSpectrum(spectrum);
     const bool held=juce::KeyPress::isKeyCurrentlyDown(juce::KeyPress::shiftKey);
     if(held!=shiftHeld){shiftHeld=held;shiftLabel.setColour(juce::Label::textColourId,held?juce::Colour(0xffe5a64b):muted);shiftLabel.setColour(juce::Label::backgroundColourId,held?juce::Colour(0xff3a2c1d):juce::Colour(0xff202428));shiftLabel.repaint();}
     for(auto& strip:strips)if(strip){int sensitivity=held?1400:150;strip->freq.setMouseDragSensitivity(sensitivity);strip->gain.setMouseDragSensitivity(sensitivity);strip->q.setMouseDragSensitivity(sensitivity);}
+}
 void RBTEQAudioProcessorEditor::syncGraph(){analyzer.repaint();}
 
 void RBTEQAudioProcessorEditor::Analyzer::paint(juce::Graphics& g)
@@ -59,8 +60,40 @@ void RBTEQAudioProcessorEditor::Analyzer::paint(juce::Graphics& g)
     for(int b=0;b<8;++b){float x=logX(owner.processor.getBandFrequency(b),plot),y=dbY(owner.processor.getBandGain(b),plot);g.setColour(colors[b]);g.fillEllipse(x-5,y-5,10,10);g.setColour(juce::Colour(0xff101214));g.drawEllipse(x-5,y-5,10,10,1.2f);if(b==owner.selectedBand){g.setColour(colors[b].withAlpha(0.3f));g.drawEllipse(x-10,y-10,20,20,1.2f);}}
 }
 int RBTEQAudioProcessorEditor::Analyzer::hitBand(juce::Point<float> p) const{auto plot=getLocalBounds().toFloat().reduced(27,18);int best=-1;float distance=14;for(int b=0;b<8;++b){float x=logX(owner.processor.getBandFrequency(b),plot),y=dbY(owner.processor.getBandGain(b),plot);float d=p.getDistanceFrom({x,y});if(d<distance){distance=d;best=b;}}return best;}
-void RBTEQAudioProcessorEditor::Analyzer::mouseDown(const juce::MouseEvent& e){int b=hitBand(e.position);if(b>=0)owner.selectedBand=b;mouseDrag(e);}
-void RBTEQAudioProcessorEditor::Analyzer::mouseDrag(const juce::MouseEvent& e){int b=owner.selectedBand;auto plot=getLocalBounds().toFloat().reduced(27,18);float f=20.0f*std::pow(1000.0f,juce::jlimit(0.0f,1.0f,(e.position.x-plot.getX())/plot.getWidth()));float gain=juce::jlimit(-18.0f,18.0f,(plot.getCentreY()-e.position.y)/(plot.getHeight()/36.0f));owner.processor.setBandFrequency(b,f);owner.processor.setBandGain(b,gain);owner.strips[b]->freq.setValue(f,juce::dontSendNotification);owner.strips[b]->gain.setValue(gain,juce::dontSendNotification);repaint();}
+void RBTEQAudioProcessorEditor::Analyzer::mouseDown(const juce::MouseEvent& e)
+{
+    const int band = hitBand(e.position);
+    draggingBand = (band >= 0);
+    if (!draggingBand)
+        return;
+
+    owner.selectedBand = band;
+    mouseDrag(e);
+}
+
+void RBTEQAudioProcessorEditor::Analyzer::mouseDrag(const juce::MouseEvent& e)
+{
+    if (!draggingBand || owner.selectedBand < 0 || owner.selectedBand >= 8)
+        return;
+
+    const int band = owner.selectedBand;
+    const auto plot = getLocalBounds().toFloat().reduced(27, 18);
+    const float frequency = 20.0f * std::pow(1000.0f,
+        juce::jlimit(0.0f, 1.0f, (e.position.x - plot.getX()) / plot.getWidth()));
+    const float gain = juce::jlimit(-18.0f, 18.0f,
+        (plot.getCentreY() - e.position.y) / (plot.getHeight() / 36.0f));
+
+    owner.processor.setBandFrequency(band, frequency);
+    owner.processor.setBandGain(band, gain);
+    owner.strips[band]->freq.setValue(frequency, juce::dontSendNotification);
+    owner.strips[band]->gain.setValue(gain, juce::dontSendNotification);
+    repaint();
+}
+
+void RBTEQAudioProcessorEditor::Analyzer::mouseUp(const juce::MouseEvent&)
+{
+    draggingBand = false;
+}
 
 RBTEQAudioProcessorEditor::BandStrip::BandStrip(RBTEQAudioProcessorEditor& e,int b):band(b),owner(e)
 {
